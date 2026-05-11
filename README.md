@@ -52,7 +52,7 @@ memogram/
 │ └── image_viewer.dart # Полноэкранный просмотр изображений
 ├── assets/ # Ресурсы
 │ └── default.png # Дефолтная аватарка
-├── server/ # Бэкенд (PHP)
+├── hosting/ # Бэкенд (PHP)
 │ ├── init.sql # Схема базы данных
 │ ├── *.php # API-эндпоинты
 │ ├── about.md # Markdown для страницы "О приложении"
