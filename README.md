@@ -31,8 +31,8 @@
 ---
 
 ## 📂 Структура проекта
-memogram/
-├── lib/ # Flutter-приложение
+memogram/\n
+├── lib/ # Flutter-приложение\n
 │ ├── main.dart # Точка входа
 │ ├── screens/ # Все страницы
 │ │ ├── feed_page.dart # Лента постов
