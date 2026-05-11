@@ -64,6 +64,7 @@ memogram/
 ```
 Инструкция по старту проекта:
 - Создать flutter-проект в VS Code (или другой удобной среде)
+- Обновить pubspec.yaml
 - копировать содержимое папки lib с свой проект в эту же папку
 - обновить (если нет - создать) следующие файлы:
   - C:\dev\f_projects\memogram\android\app\src\main\AndroidManifest.xml
