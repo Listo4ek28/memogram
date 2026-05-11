@@ -65,6 +65,9 @@ memogram/
 Инструкция по старту проекта:
 - Создать flutter-проект в VS Code (или другой удобной среде)
 - копировать содержимое папки lib с свой проект в эту же папку
+- обновить (если нет - создать) следующие файлы:
+  - C:\dev\f_projects\memogram\android\app\src\main\AndroidManifest.xml
+  - C:\dev\f_projects\memogram\android\app\src\main\res\xml\network_security_config.xml
 - разместить серверную часть проекта на своём хостинге (непосредственно в корне: https://your_domain.com/[файлы папки hosting])
 - ввести настройки своей бд в файл config.php
 - импортировать init.sql в свою бд
