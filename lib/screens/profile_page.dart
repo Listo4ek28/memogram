@@ -6,6 +6,7 @@ import 'edit_profile_page.dart';
 import 'login_page.dart';
 import 'about_page.dart';
 import 'settings_page.dart';
+import 'admin_page.dart'; // Импортируем админ-страницу
 
 class ProfilePage extends StatefulWidget {
   final int userId;
@@ -20,6 +21,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   Map<String, dynamic>? userData;
   bool isLoading = true;
+  bool isAdmin = false;
 
   @override
   void initState() {
@@ -36,6 +38,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (data['success'] == true && mounted) {
         setState(() {
           userData = data['user'];
+          isAdmin = data['user']['is_admin'] == true;
           isLoading = false;
         });
       } else {
@@ -95,6 +98,13 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  void _openAdminPanel() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AdminPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -125,7 +135,9 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
-              if (value == 'about') {
+              if (value == 'admin' && isAdmin) {
+                _openAdminPanel();
+              } else if (value == 'about') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const AboutPage()),
@@ -139,11 +151,66 @@ class _ProfilePageState extends State<ProfilePage> {
                 _logout();
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'about', child: Text('ℹ️ About Memogram...')),
-              PopupMenuItem(value: 'settings', child: Text('⚙️ Settings')),
-              PopupMenuItem(value: 'logout', child: Text('🚪 Logout')),
-            ],
+            itemBuilder: (context) {
+              final items = <PopupMenuEntry<String>>[];
+              
+              // Кнопка админ-панели (только для администраторов)
+              if (isAdmin) {
+                items.add(
+                  const PopupMenuItem(
+                    value: 'admin',
+                    child: Row(
+                      children: [
+                        Icon(Icons.admin_panel_settings, color: Colors.red),
+                        SizedBox(width: 12),
+                        Text('Admin Panel'),
+                      ],
+                    ),
+                  ),
+                );
+                items.add(const PopupMenuDivider());
+              }
+              
+              items.addAll([
+                const PopupMenuItem(
+                  value: 'about',
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline),
+                      SizedBox(width: 12),
+                      Text('About Memogram...'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'settings',
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings),
+                      SizedBox(width: 12),
+                      Text('Settings'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, color: Colors.red),
+                      SizedBox(width: 12),
+                      Text('Logout', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ]);
+              
+              return items;
+            },
+            child: const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Icon(Icons.more_vert),
+            ),
           ),
         ],
       ),
@@ -172,6 +239,42 @@ class _ProfilePageState extends State<ProfilePage> {
                           color: Colors.grey.shade500,
                         ),
                       ),
+                      if (userData!['is_admin'] == true) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade800,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'ADMIN',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (userData!['is_banned'] == true) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade800,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'BANNED',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       if (userData!['bio'] != null && userData!['bio'].toString().isNotEmpty)
                         Container(

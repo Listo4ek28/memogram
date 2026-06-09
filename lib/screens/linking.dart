@@ -3,7 +3,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'chat_page.dart';
-import 'communities_page.dart';
+import 'community_page.dart';
+import 'showprofile_page.dart';
 
 /// Парсит текст и находит упоминания @username и ##community
 /// Возвращает RichText с кликабельными спанами
@@ -11,11 +12,13 @@ class MentionLinkifier {
   final int userId;
   final String username;
   final BuildContext context;
+  final bool highlightCurrentUser;
 
   MentionLinkifier({
     required this.userId,
     required this.username,
     required this.context,
+    this.highlightCurrentUser = true,
   });
 
   /// Преобразует обычный текст в RichText с кликабельными упоминаниями
@@ -24,7 +27,7 @@ class MentionLinkifier {
 
     final defaultStyle = style ?? const TextStyle(fontSize: 14, color: Colors.white);
     final spans = <TextSpan>[];
-    // Ищем @username или ##community (без пробелов внутри)
+    // Ищем @username или ##community
     final regex = RegExp(r'(@\w+|##\w+)');
     final matches = regex.allMatches(text);
 
@@ -36,18 +39,28 @@ class MentionLinkifier {
 
       final mention = match.group(0)!;
       if (mention.startsWith('@')) {
+        // Убираем @ для поиска в БД (username хранится без @)
+        final mentionedUsername = mention.substring(1);
+        final isCurrentUser = mentionedUsername == username;
         spans.add(TextSpan(
           text: mention,
-          style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 14),
+          style: TextStyle(
+            color: (isCurrentUser && !highlightCurrentUser) 
+                ? Colors.grey.shade400 
+                : Colors.blue,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
           recognizer: TapGestureRecognizer()
-            ..onTap = () => _openUserChat(mention.substring(1)),
+            ..onTap = () => _openUserProfile(mentionedUsername),
         ));
       } else if (mention.startsWith('##')) {
+        final communityName = mention.substring(2);
         spans.add(TextSpan(
           text: mention,
           style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 14),
           recognizer: TapGestureRecognizer()
-            ..onTap = () => _openCommunity(mention.substring(2)),
+            ..onTap = () => _openCommunity(communityName),
         ));
       }
       lastEnd = match.end;
@@ -62,38 +75,57 @@ class MentionLinkifier {
     );
   }
 
-  void _openUserChat(String mentionedUsername) async {
+  void _openUserProfile(String mentionedUsername) async {
     try {
+      debugPrint('🔍 Searching for user: "$mentionedUsername"');
+      
       final response = await http.get(
         Uri.parse('https://listo4ek.tech/search_users.php?q=$mentionedUsername&user_id=$userId'),
       );
+      
+      debugPrint('📡 Response status: ${response.statusCode}');
+      debugPrint('📡 Response body: ${response.body}');
+      
       final data = jsonDecode(response.body);
-      if (data['success'] == true && data['users'].isNotEmpty) {
+      
+      if (data['success'] == true && data['users'] != null && data['users'].isNotEmpty) {
+        debugPrint('✅ Found ${data['users'].length} users');
+        
+        // Ищем точное совпадение по username
         final user = data['users'].firstWhere(
           (u) => u['username'] == mentionedUsername,
-          orElse: () => data['users'][0],
+          orElse: () {
+            debugPrint('⚠️ No exact match for "$mentionedUsername", using first: ${data['users'][0]['username']}');
+            return data['users'][0];
+          },
         );
+        
+        debugPrint('👉 Opening profile for user: ${user['username']} (ID: ${user['id']})');
+        
         if (!context.mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ChatPage(
+            builder: (context) => ShowProfilePage(
               userId: userId,
-              username: username,
-              chatId: user['id'],
-              chatName: user['display_name'] ?? user['username'],
-              isGroup: false,
+              profileUserId: user['id'],
+              currentUsername: username,
             ),
           ),
         );
       } else {
+        debugPrint('❌ No users found for "$mentionedUsername"');
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('User @$mentionedUsername not found')),
         );
       }
     } catch (e) {
-      debugPrint('Error opening user chat: $e');
+      debugPrint('❌ Error opening user profile: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error finding user: $e')),
+      );
     }
   }
 
@@ -112,7 +144,7 @@ class MentionLinkifier {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => CommunityFeedPage(
+            builder: (context) => CommunityPage(
               userId: userId,
               username: username,
               communityId: community['id'],

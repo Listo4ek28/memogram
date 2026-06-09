@@ -46,15 +46,21 @@ class _LoginPageState extends State<LoginPage> {
     final prefs = await SharedPreferences.getInstance();
     final savedUserId = prefs.getInt('user_id');
     final savedUsername = prefs.getString('username');
+    final savedAccentColor = prefs.getString('accent_color');
     
     if (savedUserId != null && savedUsername != null) {
       if (mounted) {
+        final accentColor = savedAccentColor != null 
+            ? Color(int.parse(savedAccentColor)) 
+            : const Color(0xFFFF0040);
+            
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => MainNavigationPage(
               userId: savedUserId,
               username: savedUsername,
+              accentColor: accentColor,
             ),
           ),
         );
@@ -102,12 +108,21 @@ class _LoginPageState extends State<LoginPage> {
         if (data['success'] == true) {
           if (_isLogin) {
             await _saveLoginData(data['user_id'], data['display_name'] ?? data['username']);
+            
+            // Получаем акцентный цвет из настроек
+            final prefs = await SharedPreferences.getInstance();
+            final savedAccentColor = prefs.getString('accent_color');
+            final accentColor = savedAccentColor != null 
+                ? Color(int.parse(savedAccentColor)) 
+                : const Color(0xFFFF0040);
+            
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (context) => MainNavigationPage(
                   userId: data['user_id'], 
                   username: data['display_name'] ?? data['username'],
+                  accentColor: accentColor,
                 ),
               ),
             );

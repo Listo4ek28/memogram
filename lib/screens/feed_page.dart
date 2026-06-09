@@ -7,8 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'linking.dart';
-import 'communities_page.dart';
+import 'community_page.dart';
+import 'showprofile_page.dart';
+import 'comments_page.dart';
+import 'settings_page.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/image_viewer.dart';
 
 class FeedPage extends StatefulWidget {
   final int userId;
@@ -23,22 +27,161 @@ class FeedPage extends StatefulWidget {
 class _FeedPageState extends State<FeedPage> {
   final List<Map<String, dynamic>> _memes = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  int _currentOffset = 0;
+  int _totalCount = 0;
+  bool _hasMore = true;
+  bool _isInitialLoad = true;
+  
+  final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
   late MentionLinkifier _linkifier;
   Color _myMessageColor = const Color(0xFF202040);
+  Color _accentColor = Colors.blue;
 
   @override
   void initState() {
     super.initState();
-    _loadMyMessageColor();
-    _linkifier = MentionLinkifier(userId: widget.userId, username: widget.username, context: context);
-    _loadFeed();
+    _loadColors();
+    _linkifier = MentionLinkifier(
+      userId: widget.userId,
+      username: widget.username,
+      context: context,
+    );
+    _loadFeed(initial: true);
+    
+    // Добавляем слушатель для пагинации
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _loadMyMessageColor() async {
+  Future<void> _loadColors() async {
     final prefs = await SharedPreferences.getInstance();
     final c = prefs.getString('my_message_color');
+    final a = prefs.getString('accent_color');
     if (c != null) setState(() => _myMessageColor = Color(int.parse(c)));
+    if (a != null) setState(() => _accentColor = Color(int.parse(a)));
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMore &&
+        _hasMore &&
+        !_isLoading) {
+      _loadMorePosts();
+    }
+  }
+
+  Future<void> _loadFeed({bool initial = false, bool refresh = false}) async {
+    if (initial) {
+      setState(() {
+        _isLoading = true;
+        _currentOffset = 0;
+        _memes.clear();
+        _hasMore = true;
+      });
+    } else if (refresh) {
+      setState(() {
+        _currentOffset = 0;
+        _memes.clear();
+        _hasMore = true;
+      });
+    }
+    
+    try {
+      final url = 'https://listo4ek.tech/get_feed.php?user_id=${widget.userId}&limit=7&offset=${_currentOffset}';
+      final response = await http.get(Uri.parse(url));
+      final data = jsonDecode(response.body);
+      
+      if (data['success'] == true && mounted) {
+        final memes = List<Map<String, dynamic>>.from(data['memes']);
+        _totalCount = data['total'] ?? memes.length;
+        
+        for (var meme in memes) {
+          try {
+            final rc = await http.get(Uri.parse('https://listo4ek.tech/check_reaction.php?user_id=${widget.userId}&meme_id=${meme['id']}'));
+            if (rc.statusCode == 200) {
+              meme['has_user_reacted'] = jsonDecode(rc.body)['has_reacted'] ?? false;
+            } else {
+              meme['has_user_reacted'] = false;
+            }
+          } catch (_) { meme['has_user_reacted'] = false; }
+          meme['comments_count'] = meme['comments_count'] ?? 0;
+          meme['comments_total'] = meme['comments_count'] ?? 0;
+          meme['comments'] = [];
+          meme['comments_loaded'] = false;
+        }
+        
+        setState(() {
+          if (refresh || initial) {
+            _memes.clear();
+          }
+          _memes.addAll(memes);
+          _currentOffset = _memes.length;
+          _hasMore = _memes.length < _totalCount;
+          _isLoading = false;
+          _isInitialLoad = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _isInitialLoad = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading feed: $e');
+      setState(() {
+        _isLoading = false;
+        _isInitialLoad = false;
+      });
+    }
+  }
+
+  Future<void> _loadMorePosts() async {
+    if (_isLoadingMore || !_hasMore) return;
+    
+    setState(() => _isLoadingMore = true);
+    
+    try {
+      final url = 'https://listo4ek.tech/get_feed.php?user_id=${widget.userId}&limit=7&offset=$_currentOffset';
+      final response = await http.get(Uri.parse(url));
+      final data = jsonDecode(response.body);
+      
+      if (data['success'] == true && mounted) {
+        final memes = List<Map<String, dynamic>>.from(data['memes']);
+        _totalCount = data['total'] ?? _totalCount;
+        
+        for (var meme in memes) {
+          try {
+            final rc = await http.get(Uri.parse('https://listo4ek.tech/check_reaction.php?user_id=${widget.userId}&meme_id=${meme['id']}'));
+            if (rc.statusCode == 200) {
+              meme['has_user_reacted'] = jsonDecode(rc.body)['has_reacted'] ?? false;
+            } else {
+              meme['has_user_reacted'] = false;
+            }
+          } catch (_) { meme['has_user_reacted'] = false; }
+          meme['comments_count'] = meme['comments_count'] ?? 0;
+          meme['comments_total'] = meme['comments_count'] ?? 0;
+          meme['comments'] = [];
+          meme['comments_loaded'] = false;
+        }
+        
+        setState(() {
+          _memes.addAll(memes);
+          _currentOffset = _memes.length;
+          _hasMore = _memes.length < _totalCount;
+          _isLoadingMore = false;
+        });
+      } else {
+        setState(() => _isLoadingMore = false);
+      }
+    } catch (e) {
+      debugPrint('Error loading more posts: $e');
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  Future<void> _refreshFeed() async {
+    await _loadFeed(refresh: true);
   }
 
   Future<void> _toggleReaction(int memeId, bool hasUserReacted) async {
@@ -58,42 +201,51 @@ class _FeedPageState extends State<FeedPage> {
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(hasUserReacted ? '❤️ Reaction removed' : '❤️ You liked this!'), backgroundColor: Colors.green));
+          content: Text(hasUserReacted ? '❤️ Reaction removed' : '❤️ You liked this!'), 
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 1),
+        ));
       }
     } catch (e) { debugPrint('Error toggling reaction: $e'); }
   }
 
-  void _openImageViewer(String imageUrl) {
+  void _openImageViewer(String imagePath) {
+    final imageUrl = imagePath.startsWith('http') 
+        ? imagePath 
+        : 'https://listo4ek.tech/$imagePath';
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ImageViewer(imageUrl: 'https://listo4ek.tech/$imageUrl'),
+        builder: (_) => ImageViewer(imageUrl: imageUrl),
       ),
     );
   }
 
-  Future<void> _loadFeed() async {
-    setState(() => _isLoading = true);
-    try {
-      final response = await http.get(Uri.parse('https://listo4ek.tech/get_feed.php?user_id=${widget.userId}'));
-      final data = jsonDecode(response.body);
-      if (data['success'] == true && mounted) {
-        final memes = List<Map<String, dynamic>>.from(data['memes']);
-        for (var meme in memes) {
-          try {
-            final rc = await http.get(Uri.parse('https://listo4ek.tech/check_reaction.php?user_id=${widget.userId}&meme_id=${meme['id']}'));
-            if (rc.statusCode == 200) meme['has_user_reacted'] = jsonDecode(rc.body)['has_reacted'] ?? false;
-            else meme['has_user_reacted'] = false;
-          } catch (_) { meme['has_user_reacted'] = false; }
-          meme['comments_count'] = meme['comments_count'] ?? 0;
-          meme['comments_total'] = meme['comments_count'] ?? 0;
-          meme['comments'] = [];
-          meme['comments_loaded'] = false;
-        }
-        setState(() { _memes.clear(); _memes.addAll(memes); });
-      }
-    } catch (e) { debugPrint('Error loading feed: $e'); }
-    finally { if (mounted) setState(() => _isLoading = false); }
+  void _openUserProfile(int profileUserId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ShowProfilePage(
+          userId: widget.userId,
+          profileUserId: profileUserId,
+          currentUsername: widget.username,
+        ),
+      ),
+    );
+  }
+
+  void _openCommunity(int communityId, String communityName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CommunityPage(
+          userId: widget.userId,
+          username: widget.username,
+          communityId: communityId,
+          communityName: communityName,
+        ),
+      ),
+    );
   }
 
   Future<void> _loadComments(int memeId, {bool loadMore = false}) async {
@@ -253,7 +405,6 @@ class _FeedPageState extends State<FeedPage> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('Edit Post', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            // Область фото
             GestureDetector(
               onTap: () async {
                 if (!removeImage) {
@@ -277,7 +428,6 @@ class _FeedPageState extends State<FeedPage> {
                       ])
                     : (hasExistingImage && !removeImage)
                         ? Stack(children: [
-                            // ИСПРАВЛЕНО: проверяем, не начинается ли URL уже с https://
                             ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: Image.network(
@@ -520,7 +670,7 @@ class _FeedPageState extends State<FeedPage> {
                   );
                   if (jsonDecode(postResponse.body)['success'] == true && mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post created!'), backgroundColor: Colors.green));
-                    _loadFeed();
+                    await _refreshFeed();
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(jsonDecode(postResponse.body)['error'] ?? 'Failed')));
                   }
@@ -561,7 +711,7 @@ class _FeedPageState extends State<FeedPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final hasImage = meme['meme_image'] != null && meme['meme_image'].toString().isNotEmpty;
     final hasUserReacted = meme['has_user_reacted'] == true;
-    final community = meme['community_name'] ?? 'Public';
+    final community = meme['community_name'];
     final communityId = meme['community_id'];
     final username = '@${meme['username']}';
     final text = meme['meme_text'];
@@ -579,55 +729,149 @@ class _FeedPageState extends State<FeedPage> {
       padding: const EdgeInsets.all(8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
-          GestureDetector(
-            onTap: () { if (communityId != null) Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityFeedPage(userId: widget.userId, username: widget.username, communityId: communityId, communityName: community))); },
-            child: Text('##$community', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue, decoration: TextDecoration.underline)),
-          ),
-          const SizedBox(width: 6),
+          if (community != null && community.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                if (communityId != null) {
+                  _openCommunity(communityId, community);
+                }
+              },
+              child: Text(
+                '##$community',
+                // Убираем const, так как _accentColor не константа
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: _accentColor,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          if (community != null && community.isNotEmpty) const SizedBox(width: 6),
           _linkifier.buildRichText(username),
         ]),
         if (hasImage) ...[const SizedBox(height: 6), _buildPostImage(meme['meme_image'])],
         if (text != null && text.toString().isNotEmpty)
-          Padding(padding: EdgeInsets.only(top: hasImage ? 6 : 4, bottom: 4), child: _linkifier.buildRichText(text.toString())),
+          Padding(
+            padding: EdgeInsets.only(top: hasImage ? 6 : 4, bottom: 4),
+            child: _linkifier.buildRichText(text.toString()),
+          ),
         const SizedBox(height: 4),
         Row(children: [
-          GestureDetector(onTap: () => _toggleReaction(meme['id'], hasUserReacted), child: Row(children: [
-            Icon(hasUserReacted ? Icons.favorite : Icons.favorite_border, size: 16, color: hasUserReacted ? Colors.red : Colors.grey),
-            const SizedBox(width: 2), Text(_formatNumber(reactions), style: TextStyle(fontSize: 11, color: hasUserReacted ? Colors.red : Colors.grey)),
-          ])),
+          GestureDetector(
+            onTap: () => _toggleReaction(meme['id'], hasUserReacted),
+            child: Row(children: [
+              Icon(
+                hasUserReacted ? Icons.favorite : Icons.favorite_border,
+                size: 16,
+                color: hasUserReacted ? Colors.red : Colors.grey,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                _formatNumber(reactions),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: hasUserReacted ? Colors.red : Colors.grey,
+                ),
+              ),
+            ]),
+          ),
           const SizedBox(width: 16),
-          GestureDetector(onTap: () => _showCommentsSheet(meme), child: Row(children: [
-            const Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
-            const SizedBox(width: 2), Text(_formatNumber(commentsCount), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          ])),
+          GestureDetector(
+            onTap: () => _showCommentsSheet(meme),
+            child: Row(children: [
+              const Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
+              const SizedBox(width: 2),
+              Text(
+                _formatNumber(commentsCount),
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ]),
+          ),
           const Spacer(),
           Text(time, style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
-          const SizedBox(width: 8), Icon(Icons.remove_red_eye_outlined, size: 14, color: Colors.grey.shade500),
-          const SizedBox(width: 2), Text('$views', style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+          const SizedBox(width: 8),
+          Icon(Icons.remove_red_eye_outlined, size: 14, color: Colors.grey.shade500),
+          const SizedBox(width: 2),
+          Text('$views', style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
         ]),
       ]),
     );
 
     return GestureDetector(
       onLongPress: () => _showPostMenu(meme),
-      child: Container(margin: const EdgeInsets.symmetric(vertical: 6), child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        SizedBox(width: avatarWidth, child: Center(child: AppAvatar(base64Image: avatarBase64, radius: 20))),
-        Flexible(child: postCard),
-        SizedBox(width: screenWidth * (1 - 1/7 - 5/7)),
-      ])),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          SizedBox(
+            width: avatarWidth,
+            child: GestureDetector(
+              onTap: () => _openUserProfile(meme['user_id']),
+              child: Center(
+                child: AppAvatar(base64Image: avatarBase64, radius: 20),
+              ),
+            ),
+          ),
+          Flexible(child: postCard),
+          SizedBox(width: screenWidth * (1 - 1/7 - 5/7)),
+        ]),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Feed'), centerTitle: false,
-        actions: [IconButton(icon: const Icon(Icons.add), onPressed: _createPost, tooltip: 'Create post')]),
-      body: RefreshIndicator(onRefresh: _loadFeed,
-        child: _isLoading ? const Center(child: CircularProgressIndicator())
-            : _memes.isEmpty ? const Center(child: Text('No posts yet'))
-                : ListView.builder(padding: const EdgeInsets.all(8), itemCount: _memes.length, itemBuilder: (_, i) => _buildPostItem(_memes[i]))),
+      appBar: AppBar(
+        title: const Text('Feed'),
+        centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _createPost,
+            tooltip: 'Create post',
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refreshFeed,
+        child: _isLoading && _isInitialLoad
+            ? const Center(child: CircularProgressIndicator())
+            : _memes.isEmpty && !_isLoading
+                ? const Center(child: Text('No posts yet'))
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(8),
+                    itemCount: _memes.length + (_isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == _memes.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      }
+                      return _buildPostItem(_memes[index]);
+                    },
+                  ),
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void refreshData() {
+    // Фоновое обновление без показа индикатора загрузки
+    _loadFeed(refresh: true);
   }
 }
 
@@ -646,33 +890,79 @@ class _ImageViewerState extends State<ImageViewer> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context))),
-      body: Center(child: GestureDetector(
-        onScaleStart: (d) { _previousScale = _scale; _previousOffset = _offset; },
-        onScaleUpdate: (d) {
-          setState(() {
-            _scale = (_previousScale * d.scale).clamp(1.0, 5.0);
-            if (_scale > 1.0) _offset = _previousOffset + d.focalPointDelta; else _offset = Offset.zero;
-            _clampOffset();
-          });
-        },
-        onDoubleTap: () => setState(() {
-          if (_scale > 1.0) { _scale = 1.0; _offset = Offset.zero; } else { _scale = 3.0; _offset = Offset.zero; }
-          _clampOffset();
-        }),
-        child: Transform(transform: Matrix4.identity()..translate(_offset.dx, _offset.dy)..scale(_scale),
-          child: Center(child: Image.network(widget.imageUrl, fit: BoxFit.contain, loadingBuilder: (_, child, progress) {
-            if (progress == null) return child;
-            return const Center(child: CircularProgressIndicator(color: Colors.white));
-          }))),
-      )),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: GestureDetector(
+          onScaleStart: (d) {
+            _previousScale = _scale;
+            _previousOffset = _offset;
+          },
+          onScaleUpdate: (d) {
+            setState(() {
+              _scale = (_previousScale * d.scale).clamp(1.0, 5.0);
+              if (_scale > 1.0) {
+                _offset = _previousOffset + d.focalPointDelta;
+              } else {
+                _offset = Offset.zero;
+              }
+              _clampOffset();
+            });
+          },
+          onDoubleTap: () {
+            setState(() {
+              if (_scale > 1.0) {
+                _scale = 1.0;
+                _offset = Offset.zero;
+              } else {
+                _scale = 3.0;
+                _offset = Offset.zero;
+              }
+              _clampOffset();
+            });
+          },
+          child: Transform(
+            transform: Matrix4.identity()
+              ..translate(_offset.dx, _offset.dy)
+              ..scale(_scale),
+            child: Center(
+              child: Image.network(
+                widget.imageUrl,
+                fit: BoxFit.contain,
+                loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  );
+                },
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image, color: Colors.grey, size: 50),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   void _clampOffset() {
     final size = MediaQuery.of(context).size;
-    final maxX = (size.width * (_scale - 1)) / 2, maxY = (size.height * (_scale - 1)) / 2;
-    _offset = _scale <= 1.0 ? Offset.zero : Offset(_offset.dx.clamp(-maxX, maxX), _offset.dy.clamp(-maxY, maxY));
+    final maxX = (size.width * (_scale - 1)) / 2;
+    final maxY = (size.height * (_scale - 1)) / 2;
+    if (_scale <= 1.0) {
+      _offset = Offset.zero;
+    } else {
+      _offset = Offset(
+        _offset.dx.clamp(-maxX, maxX),
+        _offset.dy.clamp(-maxY, maxY),
+      );
+    }
   }
 }

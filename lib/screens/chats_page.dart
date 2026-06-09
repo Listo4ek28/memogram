@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_page.dart';
 import 'profile_page.dart';
-import 'admin_page.dart';
+import 'showprofile_page.dart';
 import '../widgets/avatar_widget.dart';
 
 class ChatsPage extends StatefulWidget {
@@ -163,13 +163,14 @@ class _ChatsPageState extends State<ChatsPage> {
     }
   }
 
-  Future<void> _sendFriendRequest(int userId) async {
+  Future<void> _sendFollowRequest(int userId) async {
     try {
       final response = await http.post(
-        Uri.parse('https://listo4ek.tech/add_friend.php'),
+        Uri.parse('https://listo4ek.tech/toggle_follow.php'),
         body: jsonEncode({
           'user_id': widget.userId,
-          'friend_id': userId,
+          'follow_id': userId,
+          'action': 'follow',
         }),
         headers: {'Content-Type': 'application/json'},
       );
@@ -179,7 +180,7 @@ class _ChatsPageState extends State<ChatsPage> {
       if (data['success'] == true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Friend request sent!'),
+            content: Text('Subscribed!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -187,13 +188,13 @@ class _ChatsPageState extends State<ChatsPage> {
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(data['error'] ?? 'Failed to send request'),
+            content: Text(data['error'] ?? 'Failed to subscribe'),
             backgroundColor: Colors.orange,
           ),
         );
       }
     } catch (e) {
-      debugPrint('Error sending friend request: $e');
+      debugPrint('Error sending follow request: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -218,6 +219,19 @@ class _ChatsPageState extends State<ChatsPage> {
         ),
       ),
     ).then((_) => _loadData());
+  }
+
+  void _openUserProfile(int profileUserId, String profileUsername) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ShowProfilePage(
+          userId: widget.userId,
+          profileUserId: profileUserId,
+          currentUsername: widget.username,
+        ),
+      ),
+    );
   }
 
   String _formatDate(String? dateString) {
@@ -271,16 +285,6 @@ class _ChatsPageState extends State<ChatsPage> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.admin_panel_settings),
-            tooltip: 'Admin (all memes)',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AdminPage()),
-              );
-            },
-          ),
           GestureDetector(
             onTap: () {
               Navigator.push(
@@ -324,13 +328,26 @@ class _ChatsPageState extends State<ChatsPage> {
                           itemBuilder: (context, index) {
                             final user = _searchResults[index];
                             return ListTile(
-                              leading: AppAvatar(
-                                base64Image: user['avatar'],
-                                radius: 20,
+                              leading: GestureDetector(
+                                onTap: () => _openUserProfile(user['id'], user['display_name']),
+                                child: AppAvatar(
+                                  base64Image: user['avatar'],
+                                  radius: 20,
+                                ),
                               ),
-                              title: Text(user['display_name']),
+                              title: GestureDetector(
+                                onTap: () => _openUserProfile(user['id'], user['display_name']),
+                                child: Text(user['display_name']),
+                              ),
                               subtitle: Text('@${user['username']}'),
-                              onTap: () => _startChat(user['id'], user['display_name']),
+                              trailing: OutlinedButton(
+                                onPressed: () => _sendFollowRequest(user['id']),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: Colors.green.shade400),
+                                  foregroundColor: Colors.green.shade400,
+                                ),
+                                child: const Text('Subscribe'),
+                              ),
                             );
                           },
                         )
@@ -345,11 +362,17 @@ class _ChatsPageState extends State<ChatsPage> {
                             ),
                           ),
                           ..._chats.map((chat) => ListTile(
-                            leading: AppAvatar(
-                              base64Image: chat['avatar'],
-                              radius: 20,
+                            leading: GestureDetector(
+                              onTap: () => _openUserProfile(chat['chat_id'], chat['display_name'] ?? 'User'),
+                              child: AppAvatar(
+                                base64Image: chat['avatar'],
+                                radius: 20,
+                              ),
                             ),
-                            title: Text(chat['display_name'] ?? 'User'),
+                            title: GestureDetector(
+                              onTap: () => _openUserProfile(chat['chat_id'], chat['display_name'] ?? 'User'),
+                              child: Text(chat['display_name'] ?? 'User'),
+                            ),
                             subtitle: Text(
                               chat['last_message'] ?? 'No messages yet',
                               maxLines: 1,
@@ -391,16 +414,35 @@ class _ChatsPageState extends State<ChatsPage> {
                             ),
                           ),
                           ..._friends.map((friend) => ListTile(
-                            leading: AppAvatar(
-                              base64Image: friend['avatar'],
-                              radius: 20,
+                            leading: GestureDetector(
+                              onTap: () => _openUserProfile(friend['id'], friend['display_name']),
+                              child: AppAvatar(
+                                base64Image: friend['avatar'],
+                                radius: 20,
+                              ),
                             ),
-                            title: Text(friend['display_name']),
+                            title: GestureDetector(
+                              onTap: () => _openUserProfile(friend['id'], friend['display_name']),
+                              child: Text(friend['display_name']),
+                            ),
                             subtitle: Text('@${friend['username']}'),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.message, color: Colors.blue),
-                              onPressed: () => _startChat(friend['id'], friend['display_name']),
-                              tooltip: 'Send message',
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.message, color: Colors.blue),
+                                  onPressed: () => _startChat(friend['id'], friend['display_name']),
+                                  tooltip: 'Send message',
+                                ),
+                                OutlinedButton(
+                                  onPressed: () => _sendFollowRequest(friend['id']),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(color: Colors.green.shade400),
+                                    foregroundColor: Colors.green.shade400,
+                                  ),
+                                  child: const Text('Subscribe'),
+                                ),
+                              ],
                             ),
                             onTap: () => _startChat(friend['id'], friend['display_name']),
                           )),
@@ -416,19 +458,25 @@ class _ChatsPageState extends State<ChatsPage> {
                             ),
                           ),
                           ..._recommendedUsers.take(5).map((user) => ListTile(
-                            leading: AppAvatar(
-                              base64Image: user['avatar'],
-                              radius: 20,
+                            leading: GestureDetector(
+                              onTap: () => _openUserProfile(user['id'], user['display_name']),
+                              child: AppAvatar(
+                                base64Image: user['avatar'],
+                                radius: 20,
+                              ),
                             ),
-                            title: Text(user['display_name']),
+                            title: GestureDetector(
+                              onTap: () => _openUserProfile(user['id'], user['display_name']),
+                              child: Text(user['display_name']),
+                            ),
                             subtitle: Text('@${user['username']}'),
                             trailing: OutlinedButton(
-                              onPressed: () => _sendFriendRequest(user['id']),
+                              onPressed: () => _sendFollowRequest(user['id']),
                               style: OutlinedButton.styleFrom(
                                 side: BorderSide(color: Colors.green.shade400),
                                 foregroundColor: Colors.green.shade400,
                               ),
-                              child: const Text('Follow'),
+                              child: const Text('Subscribe'),
                             ),
                           )),
                         ],
@@ -452,5 +500,10 @@ class _ChatsPageState extends State<ChatsPage> {
                     ),
             ),
     );
+  }
+
+  void refreshData() {
+    // Фоновое обновление без показа индикатора загрузки
+    _loadData();
   }
 }

@@ -13,10 +13,10 @@ void main() async {
   
   // Устанавливаем цвета по умолчанию при первом запуске
   if (!prefs.containsKey('accent_color')) {
-    await prefs.setString('accent_color', const Color(0xFF202020).value.toString());
+    await prefs.setString('accent_color', const Color(0xFFFF0040).value.toString());
   }
   if (!prefs.containsKey('my_message_color')) {
-    await prefs.setString('my_message_color', const Color(0xFF202040).value.toString());
+    await prefs.setString('my_message_color', const Color(0xFF642032).value.toString());
   }
   if (!prefs.containsKey('theme_mode')) {
     await prefs.setString('theme_mode', 'dark');
@@ -31,7 +31,7 @@ void main() async {
   
   Color accentColor = accentColorStr != null 
       ? Color(int.parse(accentColorStr)) 
-      : const Color(0xFF202020);
+      : const Color(0xFFFF0040);
   
   ThemeMode themeMode = ThemeMode.dark;
   if (themeModeStr == 'light') {
@@ -94,9 +94,14 @@ class MemeApp extends StatelessWidget {
           primary: accentColor,
           secondary: accentColor,
         ),
-        appBarTheme: AppBarTheme(
-          backgroundColor: accentColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF202020),
           elevation: 0,
+        ),
+        tabBarTheme: TabBarThemeData(
+          indicatorColor: accentColor,
+          labelColor: accentColor,
+          unselectedLabelColor: Colors.grey,
         ),
         floatingActionButtonTheme: FloatingActionButtonThemeData(
           backgroundColor: accentColor,
@@ -115,7 +120,7 @@ class MemeApp extends StatelessWidget {
       themeMode: themeMode,
       home: initialRoute == 'login' 
           ? const LoginPage() 
-          : MainNavigationPage(userId: userId, username: username),
+          : MainNavigationPage(userId: userId, username: username, accentColor: accentColor),
     );
   }
 }
@@ -123,46 +128,111 @@ class MemeApp extends StatelessWidget {
 class MainNavigationPage extends StatefulWidget {
   final int userId;
   final String username;
+  final Color accentColor;
   
   const MainNavigationPage({
     super.key,
     required this.userId,
     required this.username,
+    required this.accentColor,
   });
 
   @override
   State<MainNavigationPage> createState() => _MainNavigationPageState();
 }
 
-class _MainNavigationPageState extends State<MainNavigationPage> {
+class _MainNavigationPageState extends State<MainNavigationPage> with WidgetsBindingObserver {
   int _currentIndex = 1; // 0 - сообщества, 1 - лента, 2 - чаты
   
   late final List<Widget> _pages;
+  late final List<GlobalKey> _pageKeys;
+  
+  // Храним состояния страниц
+  final PageStorageBucket _bucket = PageStorageBucket();
 
   @override
   void initState() {
     super.initState();
-    _pages = [
-      CommunitiesPage(userId: widget.userId, username: widget.username),
-      FeedPage(userId: widget.userId, username: widget.username),
-      ChatsPage(userId: widget.userId, username: widget.username), // используем ChatsPage
+    WidgetsBinding.instance.addObserver(this);
+    
+    _pageKeys = [
+      GlobalKey(debugLabel: 'communities'),
+      GlobalKey(debugLabel: 'feed'),
+      GlobalKey(debugLabel: 'chats'),
     ];
+    
+    _pages = [
+      CommunitiesPage(key: _pageKeys[0], userId: widget.userId, username: widget.username),
+      FeedPage(key: _pageKeys[1], userId: widget.userId, username: widget.username),
+      ChatsPage(key: _pageKeys[2], userId: widget.userId, username: widget.username),
+    ];
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // При возвращении приложения обновляем ВСЕ страницы в фоне
+      _updateAllPagesInBackground();
+    }
+  }
+  
+  void _updateAllPagesInBackground() {
+    // Обновляем все страницы с задержкой
+    Future.delayed(const Duration(milliseconds: 500), () {
+      for (int i = 0; i < _pages.length; i++) {
+        _triggerPageUpdate(i);
+      }
+    });
+  }
+  
+  void _triggerPageUpdate(int index) {
+    // Небольшая задержка для гарантии, что виджет отрисован
+    Future.delayed(const Duration(milliseconds: 100), () {
+      final key = _pageKeys[index];
+      final state = key.currentState;
+      
+      if (state != null) {
+        debugPrint('🔄 Updating page at index: $index');
+        if (index == 0 && state is CommunitiesPage) {
+          (state as dynamic).refreshData();
+        } else if (index == 1 && state is FeedPage) {
+          (state as dynamic).refreshData();
+        } else if (index == 2 && state is ChatsPage) {
+          (state as dynamic).refreshData();
+        }
+      } else {
+        debugPrint('⚠️ State is null for index: $index, retrying...');
+        // Если state null, пробуем ещё раз через 200 мс
+        Future.delayed(const Duration(milliseconds: 200), () {
+          _triggerPageUpdate(index);
+        });
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_currentIndex],
+      body: PageStorage(
+        bucket: _bucket,
+        child: IndexedStack(
+          index: _currentIndex,
+          children: _pages,
+        ),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
           setState(() {
             _currentIndex = index;
           });
+          // При переключении обновляем ТОЛЬКО выбранную страницу
+          _triggerPageUpdate(index);
         },
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.grey.shade900,
-        selectedItemColor: Colors.white,
+        selectedItemColor: widget.accentColor,
         unselectedItemColor: Colors.grey.shade500,
         items: const [
           BottomNavigationBarItem(
@@ -181,6 +251,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       ),
     );
   }
+  
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 }
-
-// Сборка apk: flutter build apk --release --split-per-abi

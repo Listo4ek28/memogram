@@ -11,8 +11,8 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   // Настройки
-  Color _accentColor = const Color(0xFF202020); // Dark по умолчанию
-  Color _myMessageColor = const Color(0xFF202040); // Night по умолчанию
+  Color _accentColor = const Color(0xFFFF0040); // Red по умолчанию, раньше был 0xFF202020
+  Color _myMessageColor = const Color(0xFF642032); // Cherry по умолчанию
   String _language = 'ru';
   ThemeMode _themeMode = ThemeMode.dark;
   
@@ -350,7 +350,6 @@ class _SettingsPageState extends State<SettingsPage> {
       appBar: AppBar(
         title: const Text('Settings'),
         centerTitle: true,
-        backgroundColor: _accentColor,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

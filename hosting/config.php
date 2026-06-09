@@ -14,9 +14,9 @@ header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 $host = 'localhost';
-$dbname = 'your-db';
-$username = 'your-user';
-$password = 'your-pass';
+$dbname = 'your';
+$username = 'your';
+$password = 'your';
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
